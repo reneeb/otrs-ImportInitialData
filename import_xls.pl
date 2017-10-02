@@ -7,7 +7,6 @@ use warnings;
 
 use Data::Dumper;
 use DateTime::Format::Natural;
-use Spreadsheet::ParseXLSX;
 use Getopt::Long;
 
 my %objects;
@@ -23,15 +22,33 @@ if ( !$file || !-f $file ) {
     exit 1;
 }
 
+my $module_loaded;
+eval {
+    require Spreadsheet::ParseXLSX;
+    $module_loaded = 'SP';
+    1;
+};
+
+if ( !$module_loaded ) {
+    eval {
+        require Data::XLSX::Parser;
+        $module_loaded = 'DXP';
+        1;
+    };
+}
+
+if ( !$module_loaded ) {
+    say "Need either Spreadsheet::ParseXLSX or Data::XLSX::Parser!";
+    exit 1;
+}
+
 my @base_cmd = qw(perl /opt/otrs/bin/otrs.Console.pl);
 
-my %data  = _parse_xlsx( $file );
+my %data  = _parse_xlsx( $module_loaded, $file );
 my @order = qw/customer customer_user ci/;
 
 my $requested_imports = grep{ $objects{$_} && $objects{$_} == 1 }@order;
 my $import_all        = $requested_imports ? 0 : 1;
-
-say Dumper( \%data );
 
 OBJECT:
 for my $object ( @order ) {
@@ -42,6 +59,7 @@ for my $object ( @order ) {
 
     next OBJECT if !$sub;
 
+    say Dumper( $data{$object} );
     $sub->( $data{$object}, \@base_cmd );
 }
 
@@ -86,6 +104,77 @@ sub _run_cmd {
 }
 
 sub _parse_xlsx {
+    my ($module, $file) = @_;
+
+    if ( $module eq 'SP' ) {
+        return _parse_xlsx_sp( $file );
+    }
+    elsif ( $module eq 'DXP' ) {
+        return _parse_xlsx_dxp( $file );
+    }
+}
+
+sub _parse_xlsx_dxp {
+    my ($file) = @_;
+
+    my $parser = Data::XLSX::Parser->new;
+
+    my @rows;
+    $parser->add_row_event_handler(sub {
+        my ($row) = @_;
+
+        push @rows, $row;
+    });
+
+    $parser->open($file);
+    my @sheets = $parser->workbook->names;
+     
+    my %data;
+
+    for my $sheet ( @sheets ) {
+
+        my $object = $sheet;
+        my $class;
+
+        if ( $object =~ m{^ci\s*-} ) {
+            ($object, $class) = split /\s*-\s*/, $object;
+        }
+
+        # parse sheet with sheet name
+        $parser->sheet_by_rid( "rId" . $parser->workbook->sheet_id( $sheet ) );
+
+        my @header;
+
+        ROW:
+        for my $row ( 0 .. $#rows ) {
+            if ( $row == 0 ) {
+                @header = @{ $rows[$row] };
+                next ROW;
+            }
+
+            my %entity;
+
+            if ( $class ) {
+                $entity{class} = $class;
+            }
+
+            for my $col ( 0 .. $#{$rows[$row]} ) {
+                my $attribute   = $rows[$row]->[$col];
+                my $header_name = $header[$col];
+
+                $entity{$header_name} = $attribute;
+            }
+
+            push @{ $data{$object} }, \%entity;
+        }
+
+        @rows = ();
+    }
+
+    return %data;
+}
+
+sub _parse_xlsx_sp {
     my ($file) = @_;
 
     my $parser   = Spreadsheet::ParseXLSX->new;
