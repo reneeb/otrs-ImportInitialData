@@ -15,6 +15,7 @@ GetOptions(
     'ci'            => \$objects{ci},
     'customer'      => \$objects{customer},
     'customer_user' => \$objects{customer_user},
+    'agent'         => \$objects{agent},
 );
 
 if ( !$file || !-f $file ) {
@@ -45,7 +46,7 @@ if ( !$module_loaded ) {
 my @base_cmd = qw(perl /opt/otrs/bin/otrs.Console.pl);
 
 my %data  = _parse_xlsx( $module_loaded, $file );
-my @order = qw/customer customer_user ci/;
+my @order = qw/agent customer customer_user ci/;
 
 my $requested_imports = grep{ $objects{$_} && $objects{$_} == 1 }@order;
 my $import_all        = $requested_imports ? 0 : 1;
@@ -61,6 +62,13 @@ for my $object ( @order ) {
 
     say Dumper( $data{$object} );
     $sub->( $data{$object}, \@base_cmd );
+}
+
+sub import_agent {
+    my ($entities, $base_cmd) = @_;
+
+    my $cmd = 'Admin::User::Add';
+    _run_cmd( $base_cmd, $cmd, $entities );
 }
 
 sub import_ci {
