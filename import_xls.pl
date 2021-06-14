@@ -12,6 +12,7 @@ use Getopt::Long;
 my %objects;
 GetOptions(
     'xls=s'         => \my $file,
+    'cmd-only'      => \my $cmd_only,
     'ci'            => \$objects{ci},
     'customer'      => \$objects{customer},
     'customer_user' => \$objects{customer_user},
@@ -107,6 +108,7 @@ sub _run_cmd {
         }
 
         say "@{$base_cmd} $cmd @args";
+        return if $cmd_only;
         system @{ $base_cmd }, $cmd, @args;
     }
 }
@@ -149,7 +151,7 @@ sub _parse_xlsx_dxp {
         }
 
         # parse sheet with sheet name
-        $parser->sheet_by_rid( "rId" . $parser->workbook->sheet_id( $sheet ) );
+        $parser->sheet_by_rid( $parser->workbook->sheet_rid( $sheet ) );
 
         my @header;
 
